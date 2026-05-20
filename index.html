@@ -209,7 +209,23 @@ function loadData(){try{const s=localStorage.getItem(STORAGE_KEY);if(s)allData=J
 
 document.getElementById('file-input').addEventListener('change',async e=>{
   const files=Array.from(e.target.files);
+  // 업로드된 파일의 월을 먼저 파악해서 해당 월 기존 데이터 제거 (재업로드 지원)
+  const newMonths=new Set();
+  for(const f of files){
+    const ext=f.name.split('.').pop().toLowerCase();
+    // 파일명에서 월 추출 시도 (예: 2026-05-01_2026-05-31.xlsx)
+    const mMatch=f.name.match(/(\d{4}[-_]\d{2})/);
+    if(mMatch)newMonths.add(mMatch[1].replace('_','-'));
+  }
+  // 파일 파싱해서 실제 포함된 월 확인
+  const tempData=[];
+  const origAllData=[...allData];
+  allData=[];
   for(const f of files)await parseFile(f);
+  const uploadedMonths=[...new Set(allData.map(d=>d.date.slice(0,7)))];
+  // 기존 데이터에서 업로드된 월 제거 후 새 데이터 합산
+  const kept=origAllData.filter(d=>!uploadedMonths.includes(d.date.slice(0,7)));
+  allData=[...kept,...allData];
   e.target.value='';
   saveData();
   renderAll();
@@ -431,12 +447,13 @@ async function runAdvice(type){
   const totalIn=inData.reduce((s,d)=>s+d.amount,0);
   const cats={};outData.forEach(d=>{cats[d.category]=(cats[d.category]||0)+d.amount;});
   const catSummary=Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${k}: ${fmt(v)}원(${Math.round(v/totalOut*100)}%)`).join(', ');
-  const months={};allData.forEach(d=>{const m=d.date.slice(0,7);if(!months[m])months[m]={in:0,out:0};if(d.type==='수입')months[m].in+=d.amount;else months[m].out+=d.amount;});
+  const months={};allData.filter(mf).forEach(d=>{const m=d.date.slice(0,7);if(!months[m])months[m]={in:0,out:0};if(d.type==='수입')months[m].in+=d.amount;else months[m].out+=d.amount;});
+  const monthLabel=activeMonth==='전체'?'전체 기간':activeMonth;
   const monthSummary=Object.entries(months).sort().map(([m,v])=>`${m}: 수입 ${fmt(v.in)}원 지출 ${fmt(v.out)}원`).join(' | ');
   const prompts={
-    expense:`다음은 나의 가계부 지출 데이터입니다.\n총 지출: ${fmt(totalOut)}원\n분류별: ${catSummary}\n월별: ${monthSummary}\n\n위 데이터를 분석해서 아래 4가지를 각 2~3줄로 한국어로 작성하세요. 반드시 JSON만 응답하세요:\n{"good":"잘한 점(수치 포함)","bad":"부족한 점(수치 포함)","next":"다음달 보완점(액션 포함)","prev":"전월 대비 분석"}`,
+    expense:`다음은 나의 가계부 지출 데이터입니다 (분석 기간: ${monthLabel}).\n총 지출: ${fmt(totalOut)}원\n분류별: ${catSummary}\n월별: ${monthSummary}\n\n위 데이터를 분석해서 아래 4가지를 각 2~3줄로 한국어로 작성하세요. 반드시 JSON만 응답하세요:\n{"good":"잘한 점(수치 포함)","bad":"부족한 점(수치 포함)","next":"다음달 보완점(액션 포함)","prev":"전월 대비 분석"}`,
     income:`나는 매월 25일 내외 월급을 받고 출장 시 출장비를 수령합니다.\n총 수입: ${fmt(totalIn)}원\n월별: ${monthSummary}\n수입 내역: ${inData.map(d=>`${d.date} ${d.category} ${d.content} ${fmt(d.amount)}원`).join(', ')}\n\n위 데이터 분석해서 4가지를 각 2~3줄 한국어로. 반드시 JSON만:\n{"good":"수입 긍정적 측면","bad":"수입 위험 요소","next":"다음달 수입 관련 챙길 것","prev":"수입 패턴 분석"}`,
-    combined:`총 수입: ${fmt(totalIn)}원, 총 지출: ${fmt(totalOut)}원, 순잔액: ${fmt(totalIn-totalOut)}원\n저축률: ${totalIn>0?Math.round((totalIn-totalOut)/totalIn*100)+'%':'데이터 부족'}\n월별: ${monthSummary}\n지출 분류: ${catSummary}\n\n위 데이터 기반 재무 분석 4가지 각 2~3줄 한국어. 반드시 JSON만:\n{"good":"재무 건전성 잘하는 점","bad":"위험 신호 또는 개선 필요","next":"다음달 핵심 재무 액션","prev":"전월 대비 재무 트렌드"}`
+    combined:`분석 기간: ${monthLabel}\n총 수입: ${fmt(totalIn)}원, 총 지출: ${fmt(totalOut)}원, 순잔액: ${fmt(totalIn-totalOut)}원\n저축률: ${totalIn>0?Math.round((totalIn-totalOut)/totalIn*100)+'%':'데이터 부족'}\n월별: ${monthSummary}\n지출 분류: ${catSummary}\n\n위 데이터 기반 재무 분석 4가지 각 2~3줄 한국어. 반드시 JSON만:\n{"good":"재무 건전성 잘하는 점","bad":"위험 신호 또는 개선 필요","next":"다음달 핵심 재무 액션","prev":"전월 대비 재무 트렌드"}`
   };
   try{
     const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompts[type]}]})});
@@ -456,15 +473,16 @@ async function runAdvice(type){
 }
 
 function renderAdviceFallback(el,type){
-  const outData=allData.filter(d=>d.type==='지출');
-  const inData=allData.filter(d=>d.type==='수입');
+  const mfb=d=>activeMonth==='전체'||d.date.slice(0,7)===activeMonth;
+  const outData=allData.filter(d=>d.type==='지출'&&mfb(d));
+  const inData=allData.filter(d=>d.type==='수입'&&mfb(d));
   const totalOut=outData.reduce((s,d)=>s+d.amount,0);
   const totalIn=inData.reduce((s,d)=>s+d.amount,0);
   const net=totalIn-totalOut;
   const savRate=totalIn>0?Math.round(net/totalIn*100):null;
   const cats={};outData.forEach(d=>{cats[d.category]=(cats[d.category]||0)+d.amount;});
   const topCat=Object.entries(cats).sort((a,b)=>b[1]-a[1]);
-  const months={};allData.forEach(d=>{const m=d.date.slice(0,7);if(!months[m])months[m]={in:0,out:0};if(d.type==='수입')months[m].in+=d.amount;else months[m].out+=d.amount;});
+  const months={};allData.filter(mfb).forEach(d=>{const m=d.date.slice(0,7);if(!months[m])months[m]={in:0,out:0};if(d.type==='수입')months[m].in+=d.amount;else months[m].out+=d.amount;});
   const mKeys=Object.keys(months).sort();
   const lastM=mKeys[mKeys.length-1];
   const prevM=mKeys[mKeys.length-2];
