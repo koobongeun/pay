@@ -74,12 +74,12 @@ tr:hover td{background:var(--card2);}
 .advice-item.bad{border-color:var(--red);}
 .advice-item.next{border-color:var(--amber);}
 .advice-item.prev{border-color:var(--teal);}
-.advice-item-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;}
+.advice-item-title{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;}
 .advice-item.good .advice-item-title{color:var(--green);}
 .advice-item.bad .advice-item-title{color:var(--red);}
 .advice-item.next .advice-item-title{color:var(--amber);}
 .advice-item.prev .advice-item-title{color:var(--teal);}
-.advice-item-content{font-size:13px;color:var(--text2);line-height:1.7;}
+.advice-item-content{font-size:15px;color:var(--text2);line-height:1.8;}
 .advice-loading{text-align:center;padding:40px;color:var(--text3);font-size:13px;}
 .advice-dot-anim::after{content:'';animation:dots 1.5s infinite;}
 @keyframes dots{0%{content:'.'}33%{content:'..'}66%{content:'...'}}
@@ -541,9 +541,47 @@ function renderAdviceFallback(el,type){
   renderAdvice(el,result);
 }
 
+function highlightText(text){
+  text = text.replace(/([0-9,]+(?:\.[0-9]+)?)(원|%|건|배|만원|억원|천원)/g,
+    '<span style="color:var(--accent);font-weight:600;">$1$2</span>');
+  text = text.replace(/([\+\-][0-9,]+(?:\.[0-9]+)?%?)/g, function(m){
+    return m.startsWith('-')
+      ? '<span style="color:var(--red);font-weight:600;">'+m+'</span>'
+      : '<span style="color:var(--green);font-weight:600;">'+m+'</span>';
+  });
+  var goodWords = ['양호','안정','절감','개선','달성','유지','흑자','절약'];
+  goodWords.forEach(function(w){
+    text = text.split(w).join('<span style="color:var(--green);font-weight:600;">'+w+'</span>');
+  });
+  var badWords = ['위험','적자','초과','주의','과소비','부족','미달'];
+  badWords.forEach(function(w){
+    text = text.split(w).join('<span style="color:var(--red);font-weight:600;">'+w+'</span>');
+  });
+  var actionWords = ['권장','목표','설정','확인','점검','계획','추천'];
+  actionWords.forEach(function(w){
+    text = text.split(w).join('<span style="color:var(--amber);font-weight:600;">'+w+'</span>');
+  });
+  return text;
+}
+
 function renderAdvice(el,data){
-  const types=[{key:'good',cls:'good',label:'✅ 잘한 점'},{key:'bad',cls:'bad',label:'⚠️ 부족한 점'},{key:'next',cls:'next',label:'📌 다음달 보완'},{key:'prev',cls:'prev',label:'📊 전월 대비'}];
-  el.innerHTML=`<div class="advice-grid">${types.map(t=>`<div class="advice-item ${t.cls}"><div class="advice-item-title">${t.label}</div><div class="advice-item-content">${(data[t.key]||'').replace(/\n/g,'<br>')}</div></div>`).join('')}</div>`;
+  var types=[
+    {key:'good',cls:'good',label:'✅ 잘한 점'},
+    {key:'bad',cls:'bad',label:'⚠️ 부족한 점'},
+    {key:'next',cls:'next',label:'📌 다음달 보완'},
+    {key:'prev',cls:'prev',label:'📊 전월 대비'}
+  ];
+  var html='<div class="advice-grid">';
+  types.forEach(function(t){
+    var raw=(data[t.key]||'').replace(/\n/g,'<br>');
+    var highlighted=highlightText(raw);
+    html+='<div class="advice-item '+t.cls+'">';
+    html+='<div class="advice-item-title">'+t.label+'</div>';
+    html+='<div class="advice-item-content">'+highlighted+'</div>';
+    html+='</div>';
+  });
+  html+='</div>';
+  el.innerHTML=html;
 }
 
 document.querySelectorAll('.nav-tab').forEach(tab=>{
