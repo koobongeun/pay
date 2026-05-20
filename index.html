@@ -115,10 +115,29 @@ tr:hover td{background:var(--card2);}
     <span class="data-count" id="data-count"></span>
     <select id="month-select" style="display:none;padding:5px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:#1a1d27;color:#e8eaf0;font-size:12px;font-family:inherit;cursor:pointer;outline:none;"></select>
     <span class="period-badge" id="period-badge">데이터 없음</span>
+    <button class="upload-btn" id="manage-btn" onclick="openManageModal()" style="background:transparent;border:1px solid rgba(255,255,255,0.12);color:#9096a8;">🗂 데이터 관리</button>
     <button class="upload-btn" onclick="document.getElementById('file-input').click()">＋ 파일 업로드</button>
     <input type="file" id="file-input" accept=".xlsx,.xls,.csv" multiple>
   </div>
+
 </nav>
+
+<!-- 데이터 관리 모달 -->
+<div id="manage-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:9999;overflow-y:auto;">
+  <div style="background:#181b25;border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:28px;width:420px;max-width:92vw;margin:80px auto 40px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <span style="font-size:15px;font-weight:600;color:#e8eaf0;">데이터 관리</span>
+      <button onclick="closeManageModal()" style="background:none;border:none;color:#9096a8;font-size:22px;cursor:pointer;line-height:1;">×</button>
+    </div>
+    <div style="font-size:12px;color:#5a6070;margin-bottom:14px;">저장된 월을 선택해 삭제할 수 있습니다. 삭제 후 복구 불가.</div>
+    <div id="modal-month-list" style="display:flex;flex-direction:column;gap:8px;max-height:400px;overflow-y:auto;margin-bottom:20px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:16px;border-top:1px solid rgba(255,255,255,0.07);">
+      <button onclick="deleteSelectedMonths()" style="padding:7px 16px;background:#f05a5a;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;">선택 삭제</button>
+      <button onclick="deleteAllData()" style="padding:7px 16px;background:transparent;color:#f05a5a;border:1px solid #f05a5a;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;">전체 초기화</button>
+      <button onclick="closeManageModal()" style="padding:7px 16px;background:transparent;color:#9096a8;border:1px solid rgba(255,255,255,0.12);border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;">닫기</button>
+    </div>
+  </div>
+</div>
 
 <div class="page active" id="page-expense">
   <div id="expense-empty" class="empty-state"><div class="icon">📂</div><h3>가계부 파일을 업로드해주세요</h3><p>xlsx / xls / csv 형식 지원<br>여러 달 파일을 동시에 업로드하면 합산됩니다</p></div>
@@ -534,6 +553,54 @@ document.querySelectorAll('.nav-tab').forEach(tab=>{
     tab.classList.add('active');
     document.getElementById(`page-${tab.dataset.page}`).classList.add('active');
   });
+});
+
+function openManageModal(){
+  const months=[...new Set(allData.map(d=>d.date.slice(0,7)))].sort();
+  const list=document.getElementById('modal-month-list');
+  if(months.length===0){
+    list.innerHTML='<div style="color:#5a6070;font-size:13px;text-align:center;padding:20px;">저장된 데이터가 없습니다</div>';
+  } else {
+    const byMonth={};
+    allData.forEach(d=>{const m=d.date.slice(0,7);if(!byMonth[m])byMonth[m]={cnt:0,out:0,in:0};byMonth[m].cnt++;if(d.type==='지출')byMonth[m].out+=d.amount;else byMonth[m].in+=d.amount;});
+    list.innerHTML=months.map(m=>`
+      <label style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#13151c;border-radius:8px;cursor:pointer;border:1px solid rgba(255,255,255,0.06);">
+        <input type="checkbox" data-month="${m}" style="width:16px;height:16px;cursor:pointer;accent-color:#5b7fff;">
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:500;color:#e8eaf0;">${m}</div>
+          <div style="font-size:11px;color:#5a6070;margin-top:2px;">${byMonth[m].cnt}건 · 지출 ${fmt(byMonth[m].out)}원 · 수입 ${fmt(byMonth[m].in)}원</div>
+        </div>
+      </label>`).join('');
+  }
+  document.getElementById('manage-modal').style.display='block';
+}
+
+function closeManageModal(){
+  document.getElementById('manage-modal').style.display='none';
+}
+
+function deleteSelectedMonths(){
+  const checked=[...document.querySelectorAll('#modal-month-list input[type=checkbox]:checked')].map(c=>c.dataset.month);
+  if(checked.length===0){alert('삭제할 월을 선택해주세요.');return;}
+  if(!confirm(`${checked.join(', ')} 데이터를 삭제하시겠습니까?`))return;
+  allData=allData.filter(d=>!checked.includes(d.date.slice(0,7)));
+  if(checked.includes(activeMonth))activeMonth='전체';
+  saveData();
+  closeManageModal();
+  renderAll();
+}
+
+function deleteAllData(){
+  if(!confirm('모든 데이터를 초기화하시겠습니까? 복구 불가능합니다.'))return;
+  allData=[];
+  activeMonth='전체';
+  saveData();
+  closeManageModal();
+  renderAll();
+}
+
+document.getElementById('manage-modal').addEventListener('click',function(e){
+  if(e.target===this)closeManageModal();
 });
 
 document.getElementById('month-select').addEventListener('change',function(){
