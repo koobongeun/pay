@@ -1,53 +1,51 @@
-const CACHE_NAME = 'myfinance-v1';
+const CACHE_NAME = 'myfinance-v2';
 const STATIC_ASSETS = [
-  './',
   './index.html',
   './manifest.json',
-  'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-  'https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap'
+  './icon-192.png',
+  './icon-512.png'
 ];
 
-// 설치: 정적 에셋 캐시
-self.addEventListener('install', event => {
+// 설치: 핵심 파일만 캐시
+self.addEventListener('install', function(event) {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(STATIC_ASSETS).catch(err => {
-        console.warn('일부 에셋 캐시 실패:', err);
-      });
-    }).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then(function(cache) {
+      return cache.addAll(STATIC_ASSETS);
+    }).then(function() {
+      return self.skipWaiting(); // 즉시 활성화
+    })
   );
 });
 
-// 활성화: 구버전 캐시 삭제
-self.addEventListener('activate', event => {
+// 활성화: 구버전 캐시 전부 삭제
+self.addEventListener('activate', function(event) {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
-      )
-    ).then(() => self.clients.claim())
+    caches.keys().then(function(keys) {
+      return Promise.all(
+        keys.filter(function(key) { return key !== CACHE_NAME; })
+            .map(function(key) { return caches.delete(key); })
+      );
+    }).then(function() {
+      return self.clients.claim(); // 즉시 모든 클라이언트 제어
+    })
   );
 });
 
-// 요청 처리: 캐시 우선, 없으면 네트워크
-self.addEventListener('fetch', event => {
-  // chrome-extension 등 비http 요청 무시
+// 요청 처리: 네트워크 우선 → 실패 시 캐시
+self.addEventListener('fetch', function(event) {
   if (!event.request.url.startsWith('http')) return;
 
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        // 유효한 응답만 캐시
-        if (!response || response.status !== 200 || response.type === 'opaque') {
-          return response;
-        }
-        const toCache = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, toCache));
-        return response;
-      }).catch(() => {
-        // 오프라인 + 캐시 없을 때 index.html 반환
+    fetch(event.request).then(function(response) {
+      if (!response || response.status !== 200) return response;
+      var toCache = response.clone();
+      caches.open(CACHE_NAME).then(function(cache) {
+        cache.put(event.request, toCache);
+      });
+      return response;
+    }).catch(function() {
+      return caches.match(event.request).then(function(cached) {
+        if (cached) return cached;
         if (event.request.destination === 'document') {
           return caches.match('./index.html');
         }
